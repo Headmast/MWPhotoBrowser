@@ -17,6 +17,12 @@
 
 static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
 
+@interface MWPhotoBrowser ()
+
+@property (nonatomic, strong) UIView *statusBarView;
+
+@end
+
 @implementation MWPhotoBrowser
 
 #pragma mark - Init
@@ -70,6 +76,7 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
     _performingLayout = NO; // Reset on view did appear
     _rotating = NO;
     _viewIsActive = NO;
+    _isPresented = NO;
     _enableGrid = YES;
     _startOnGrid = NO;
     _enableSwipeToDismiss = YES;
@@ -192,7 +199,7 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
     
     // Super
     [super viewDidLoad];
-    
+    self.isPresented = YES;
 }
 
 - (void)performLayout {
@@ -208,19 +215,35 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
     // Navigation buttons
     if ([self.navigationController.viewControllers objectAtIndex:0] == self) {
         // We're first on stack so show done button
+        CGFloat closeButtonYOffset = 15;
+        if (@available(iOS 11, *)) {
+            closeButtonYOffset = 28;
+        }
         UIButton *closeButton = [UIButton buttonWithType:UIButtonTypeCustom];
         closeButton.frame = CGRectMake(0, 0, 60, 64);
         closeButton.backgroundColor = [UIColor clearColor];
-        [closeButton setContentEdgeInsets:UIEdgeInsetsMake(0, 17, 0, 10)];
+        [closeButton setContentEdgeInsets:UIEdgeInsetsMake(0, closeButtonYOffset, 0, 10)];
         [closeButton addTarget:self action:@selector(doneButtonPressed:) forControlEvents:UIControlEventTouchUpInside];
         [[closeButton imageView] setContentMode: UIViewContentModeCenter];
         closeButton.accessibilityLabel = @"modalCloseButton";
         UIImage *imageNrm = [UIImage imageForResourcePath:@"MWPhotoBrowser.bundle/btn_close" ofType:@"png" inBundle:[NSBundle bundleForClass:[self class]]];
         
+        UIGraphicsBeginImageContextWithOptions(imageNrm.size, NO, imageNrm.scale);
+        CGContextRef context = UIGraphicsGetCurrentContext();
+        CGContextTranslateCTM(context, 0, imageNrm.size.height);
+        CGContextScaleCTM(context, 1.0, -1.0);
+        CGContextSetBlendMode(context, kCGBlendModeNormal);
+        CGRect rect = CGRectMake(0, 0, imageNrm.size.width, imageNrm.size.height);
+        CGContextClipToMask(context, rect, imageNrm.CGImage);
+        [[UIColor colorWithRed:6./255 green:80./255 blue:194./255 alpha:1.0] setFill];
+        CGContextFillRect(context, rect);
+        UIImage *imageNrm1 = UIGraphicsGetImageFromCurrentImageContext();
+        UIGraphicsEndImageContext();
+        
         closeButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-        [closeButton setImage: imageNrm forState:UIControlStateNormal];
-        [closeButton setImage: imageNrm forState:UIControlStateHighlighted];
-        [closeButton setImage: imageNrm forState:UIControlStateSelected];
+        [closeButton setImage: imageNrm1 forState:UIControlStateNormal];
+        [closeButton setImage: imageNrm1 forState:UIControlStateHighlighted];
+        [closeButton setImage: imageNrm1 forState:UIControlStateSelected];
         [closeButton setExclusiveTouch:YES];
         _doneButton = [[UIBarButtonItem alloc] initWithCustomView:closeButton];
         // Set appearance
@@ -232,7 +255,7 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
         [_doneButton setTitleTextAttributes:[NSDictionary dictionary] forState:UIControlStateHighlighted];
         
         UIBarButtonItem *fixedspace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFixedSpace target:nil action:nil];
-        fixedspace.width = -24;
+        fixedspace.width = -29;
         self.navigationItem.rightBarButtonItems = [NSArray arrayWithObjects:fixedspace, _doneButton, nil];;
     } else {
         // We're not first so show back button
@@ -387,6 +410,11 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
         [self jumpToPageAtIndex:_pageIndexBeforeRotation animated:NO];
     }
     
+    // Layout
+    if (@available(iOS 11.0, *)) {
+        [self layoutVisiblePages];
+    }
+    [self.view setNeedsLayout];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -465,9 +493,9 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
                 forBarPosition:UIBarPositionAny
                     barMetrics:UIBarMetricsDefault];
     // set solid corol for status bar, because it's trasparent after navBar setBackgroundImage:[UIImage new]
-    UIView *statusBarView = [[UIView alloc] initWithFrame:CGRectMake(0, -20, [[UIScreen mainScreen] bounds].size.width, 22)];
-    statusBarView.backgroundColor = [UIColor whiteColor];
-    [navBar addSubview:statusBarView];
+    self.statusBarView = [[UIView alloc] initWithFrame:CGRectMake(0, -[UIApplication sharedApplication].statusBarFrame.size.height, [[UIScreen mainScreen] bounds].size.width, [UIApplication sharedApplication].statusBarFrame.size.height)];
+    self.statusBarView.backgroundColor = [UIColor whiteColor];
+    [navBar addSubview:self.statusBarView];
     
     if (self.titleFontName && self.titleFontName.length > 0) {
         [navBar setTitleTextAttributes: @{
@@ -511,7 +539,12 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
 
 - (void)viewWillLayoutSubviews {
     [super viewWillLayoutSubviews];
-    [self layoutVisiblePages];
+    
+    if (@available(iOS 11.0, *)) {
+        // do nothing
+    } else {
+        [self layoutVisiblePages];
+    }
 }
 
 - (void)layoutVisiblePages {
@@ -521,6 +554,8 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
     
     // Toolbar
     _toolbar.frame = [self frameForToolbarAtOrientation:self.interfaceOrientation];
+    
+    self.statusBarView.frame = CGRectMake(0, -[UIApplication sharedApplication].statusBarFrame.size.height, [self frameForToolbarAtOrientation:self.interfaceOrientation].size.width, [UIApplication sharedApplication].statusBarFrame.size.height);
     
     // Remember index
     NSUInteger indexPriorToLayout = _currentPageIndex;
@@ -1032,12 +1067,18 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
     CGFloat height = 44;
     if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone &&
         UIInterfaceOrientationIsLandscape(orientation)) height = 32;
+    if (@available(iOS 11.0, *)) {
+        height += UIApplication.sharedApplication.keyWindow.safeAreaInsets.bottom;
+    }
     return CGRectIntegral(CGRectMake(0, self.view.bounds.size.height - height, self.view.bounds.size.width, height));
 }
 
 - (CGRect)frameForCaptionView:(MWCaptionView *)captionView atIndex:(NSUInteger)index {
     CGRect pageFrame = [self frameForPageAtIndex:index];
     CGSize captionSize = [captionView sizeThatFits:CGSizeMake(pageFrame.size.width, 0)];
+    if (@available(iOS 11.0, *)) {
+        captionSize.height += UIApplication.sharedApplication.keyWindow.safeAreaInsets.bottom;
+    }
     CGRect captionFrame = CGRectMake(pageFrame.origin.x,
                                      pageFrame.size.height - captionSize.height - (_toolbar.superview?_toolbar.frame.size.height:0),
                                      pageFrame.size.width,
@@ -1571,6 +1612,8 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
                 return;
             }
         }
+        
+        self.isPresented = NO;
         // Dismiss view controller
         if ([_delegate respondsToSelector:@selector(photoBrowserDidFinishModalPresentation:)]) {
             // Call delegate method and let them dismiss us
@@ -1672,3 +1715,4 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
 }
 
 @end
+
